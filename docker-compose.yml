@@ -7,8 +7,11 @@
 # it only feeds ${...} values used in this file (PARALLAX_BIND, PARALLAX_PORT). Compose does not read
 # .env.local for those by itself, so keep passing --env-file when you set them.
 #
-# Only Parallax's port is published, on PARALLAX_BIND (default: this machine only).
-# The gateway has no published port; Parallax reaches it by service name on a private network.
+# Only the access proxy's port is published, on PARALLAX_BIND (default: this machine only).
+# The proxy checks the Cloudflare Access token on every request, then passes the request to Parallax.
+# Parallax and the gateway have no published port; they are reached by service name on the compose
+# networks. Do not add a "ports:" entry back to parallax: it would be reachable around Access.
+# The proxy refuses to start without ACCESS_TEAM_DOMAIN and ACCESS_AUD (see .env.team.example).
 
 name: parallax-team
 
@@ -25,8 +28,9 @@ services:
       TREG_BASE_URL: http://team-gateway:8787
       PARALLAX_DATA_DIR: /data
       PORT: "3000"
-    ports:
-      - "${PARALLAX_BIND:-127.0.0.1}:${PARALLAX_PORT:-3000}:3000"
+    # No "ports:" on purpose: only access-proxy is published.
+    expose:
+      - "3000"
     volumes:
       - parallax-data:/data
     depends_on:
@@ -37,6 +41,33 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    networks:
+      - internal
+      - outbound
+
+  access-proxy:
+    build:
+      context: .
+      target: access-proxy
+    env_file:
+      - .env.local
+    environment:
+      ACCESS_PROXY_HOST: 0.0.0.0
+      ACCESS_PROXY_PORT: "8080"
+      UPSTREAM: http://parallax:3000
+    ports:
+      - "${PARALLAX_BIND:-127.0.0.1}:${PARALLAX_PORT:-3000}:8080"
+    depends_on:
+      parallax:
+        condition: service_healthy
+    read_only: true
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # "internal" reaches Parallax; "outbound" lets the proxy fetch Cloudflare's public keys and lets the
+    # published port work (a port cannot be published from a network marked internal).
     networks:
       - internal
       - outbound

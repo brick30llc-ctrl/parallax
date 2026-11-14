@@ -71,9 +71,9 @@ cd team-gateway && node --env-file=../.env.local scripts/smoke.js          # ima
 
 ## Docker
 
-`Dockerfile` has two targets (`parallax`, `team-gateway`) and `docker-compose.yml` runs both with one
-named volume for Parallax's data. Only Parallax's port is published, on `PARALLAX_BIND` (default
-`127.0.0.1`). The gateway has no published port. Both services read the file `.env.local` next to
+`Dockerfile` has three targets (`parallax`, `team-gateway`, `access-proxy`) and `docker-compose.yml` runs
+all three with one named volume for Parallax's data. Only the access proxy's port is published, on
+`PARALLAX_BIND` (default `127.0.0.1`). Parallax and the gateway have no published port. All services read the file `.env.local` next to
 `docker-compose.yml` (a fixed path). `--env-file .env.local` is separate: it supplies the `${...}` values
 in the compose file itself (`PARALLAX_BIND`, `PARALLAX_PORT`).
 
@@ -83,6 +83,11 @@ docker compose --env-file .env.local up --build
 
 Inside a container, `127.0.0.1` is the container. Point `MUSIC_URL` and the other backend URLs at
 addresses the container can reach (`http://host.docker.internal:<port>` for the Docker host).
+
+A third service, `access-proxy`, is the only one with a published port. It checks the Cloudflare
+Access token on every request and then passes the request to Parallax, so Parallax cannot be reached
+around Access. Set `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD` in `.env.local`; the stack will not start
+without them. See `access-proxy/README.md`.
 
 ## Kaggle FLUX
 

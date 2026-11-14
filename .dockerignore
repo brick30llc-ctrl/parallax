@@ -12,3 +12,4 @@ coverage
 *.key
 *.token
 team-gateway/test
+access-proxy/test
