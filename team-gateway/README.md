@@ -109,7 +109,7 @@ by index. If only some pictures of a batch come back, those requests succeed and
 reason.
 
 **Quota protection.** At most `KAGGLE_DAILY_PUSH_CAP` (12) pushes in any 24 hours (set
-`KAGGLE_STATE_FILE` so a restart cannot reset the count), at most `KAGGLE_MAX_QUEUE` (16) requests
+`KAGGLE_STATE_FILE` so a restart cannot reset the count; in Docker use `/state/kaggle-pushes.json`, the gateway's one writable volume), at most `KAGGLE_MAX_QUEUE` (16) requests
 waiting, and no push when the weekly GPU time left is under `KAGGLE_MIN_GPU_HOURS` (0.5). A request
 stopped by one of these goes to the AI Horde (`KAGGLE_FALLBACK=horde`, the default) or fails with a
 message the member can read (`KAGGLE_FALLBACK=none`). Other failures do not fall back.

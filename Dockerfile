@@ -1,10 +1,10 @@
-# Parallax and its team gateway, in one file with two runnable targets:
+# Parallax, its team gateway and the access proxy, in one file with three runnable targets:
 #
 #   docker build --target parallax     -t parallax .
 #   docker build --target team-gateway -t parallax-team-gateway .
 #   docker build --target access-proxy -t parallax-access-proxy .
 #
-# docker-compose.yml builds both. Nothing here has been built or run yet.
+# docker-compose.yml builds all three. Nothing here has been built or run yet.
 # Node 22.13 or newer is required (Parallax uses the built-in node:sqlite).
 
 ARG NODE_IMAGE=node:22-bookworm-slim
@@ -23,6 +23,8 @@ ENV NODE_ENV=production
 WORKDIR /gateway
 COPY --chown=node:node team-gateway/package.json ./package.json
 COPY --chown=node:node team-gateway/src ./src
+# Writable home for KAGGLE_STATE_FILE (compose mounts a named volume here; the container is otherwise read-only).
+RUN mkdir -p /state && chown node:node /state
 USER node
 EXPOSE 8787
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \

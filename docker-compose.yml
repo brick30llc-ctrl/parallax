@@ -87,6 +87,11 @@ services:
     # No "ports:" on purpose.
     expose:
       - "8787"
+    # The container is read-only; this volume is the one writable place, for KAGGLE_STATE_FILE=/state/...
+    # To use KAGGLE_API_TOKEN_FILE, also mount the token file read-only, for example:
+    #   - /path/on/host/kaggle_token:/run/secrets/kaggle_token:ro
+    volumes:
+      - gateway-state:/state
     read_only: true
     restart: unless-stopped
     security_opt:
@@ -99,6 +104,7 @@ services:
 
 volumes:
   parallax-data:
+  gateway-state:
 
 networks:
   # Parallax and the gateway talk here. Nothing outside can reach it.
