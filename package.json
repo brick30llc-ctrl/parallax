@@ -9,6 +9,7 @@
     "lint": "eslint",
     "check:registry": "tsx scripts/check-registry.ts",
     "typecheck": "next typegen && tsc --noEmit",
+    "test:unit": "node --test \"tests/unit/*.test.mjs\"",
     "test": "python3 tests/run.py $(ls tests/*.py tests/ui/*.mjs | grep -v -e tests/run.py -e browser.mjs)"
   },
   "dependencies": {

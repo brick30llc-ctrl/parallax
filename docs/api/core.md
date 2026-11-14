@@ -190,7 +190,7 @@ Notes on fields:
 |---|---|
 | `provider_error` | The model refused the request, failed, or returned something unreadable. The message is often the model's own words (for example a safety filter). |
 | `model_unavailable` | The model stayed busy or unreachable after 6 tries, or cannot be used right now. |
-| `timeout` | No result within 10 minutes (30 minutes for video). |
+| `timeout` | No result within 10 minutes (30 minutes for video). A host can change both with `PARALLAX_JOB_TIMEOUT_MIN` and `PARALLAX_VIDEO_JOB_TIMEOUT_MIN`. |
 | `interrupted` | The connection or the server dropped while sending, and sending again was not safe. |
 | `invalid_request` | A reference file the job uses was removed before it started. |
 | `request_refused` | The request could not be sent with these settings. |
@@ -756,8 +756,8 @@ There is no push channel and no percent field. Poll.
 - A job can go `running` → `queued` → `running` when a busy model is retried (up to 6 tries,
   waiting 3 to 48 seconds between them). `startedAt` keeps its first value. Do not treat
   the step back as an error.
-- A job that gets no result is failed with `timeout` after 10 minutes (30 for video), so
-  polling always ends.
+- A job that gets no result is failed with `timeout` after 10 minutes (30 for video; a host
+  can change both), so polling always ends.
 - **When polling stops, refresh the balance** (`GET /api/auth/me`): a failed job gave its
   credits back and a succeeded one may have been partly refunded.
 - Jobs made by one press share `batchId`. Group tiles by it. For a model with
