@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import http from "node:http";
 import { HordeBackend } from "./backends/horde.js";
 import { KaggleBackend } from "./backends/kaggle.js";
+import { wantsKaggle } from "./backends/kaggle-kernel.js";
 import { MusicBackend } from "./backends/music.js";
 import { VoiceboxBackend } from "./backends/voicebox.js";
 import { REFS_HOST, hasReferenceMedia, isFlux, kindOf, promptOf } from "./route.js";
@@ -34,13 +35,14 @@ export function createGateway(config, { log = defaultLog, backends } = {}) {
     image: new HordeBackend(config.image),
     music: new MusicBackend(config.music),
     speech: new VoiceboxBackend(config.speech),
-    kaggle: new KaggleBackend(),
+    // A request the Kaggle limits stop goes to the Horde through the image limiter.
+    kaggle: new KaggleBackend(config.kaggle, { fallback: { get configured() { return b.image.configured; }, generate: (a) => limiters.image.run(() => b.image.generate(a)) } }),
   };
   const limiters = {
     image: new Limiter(config.image.concurrency),
     music: new Limiter(config.music.concurrency),
     speech: new Limiter(config.speech.concurrency),
-    kaggle: new Limiter(1),
+    kaggle: new Limiter(1000), // the Kaggle backend batches and enforces KAGGLE_MAX_QUEUE itself
   };
   /** @type {Map<string, object>} */
   const calls = new Map();
@@ -100,7 +102,7 @@ export function createGateway(config, { log = defaultLog, backends } = {}) {
   }
 
   function backendFor(kind, endpoint) {
-    if (kind === "image") return isFlux(endpoint) && config.image.kaggleFlux ? "kaggle" : "image";
+    if (kind === "image") return config.image.kaggleFlux && wantsKaggle(config.kaggle.models, endpoint) ? "kaggle" : "image";
     return kind;
   }
 

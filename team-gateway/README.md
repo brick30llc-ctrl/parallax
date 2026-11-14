@@ -17,7 +17,7 @@ Parallax --POST /call/<endpoint>--> team gateway --> image router (AI Horde)
 | Parallax model kind | Backend | Notes |
 |---|---|---|
 | Image (Nano Banana, GPT Image, MiniMax Image, FLUX Schnell) | AI Horde through an OpenAI-compatible router | The gateway picks a live model per request from the Horde's public list: SDXL-class first, then the shortest wait. Adult-tuned models (names such as "hentai", "furry", "pony") are never picked automatically; pin one with `HORDE_MODEL` if you want it. One picture can take 7 minutes or more. |
-| Image, FLUX ids with `KAGGLE_FLUX=1` | Kaggle (stub) | Fails with an explanation. See below. |
+| Image, FLUX ids with `KAGGLE_FLUX=1` | FLUX.1-schnell on a Kaggle GPU | Batched, about 12 minutes per push. See "Kaggle FLUX" below. |
 | Music (Lyria 3.5, Lyria 3 Clip) | Stable Audio Open job server | Instrumental only, 5 to 47 seconds. Lyrics and "with vocals" text are dropped. |
 | Speech (MiniMax, Gemini TTS, Fish) | Voicebox | One light engine, one request at a time. Parallax voice names are not mapped; see `VOICEBOX_PROFILE_ID`. |
 | Video (every model) | none | Fails at once with "There is no team video backend." |
@@ -84,12 +84,69 @@ docker compose --env-file .env.local up --build
 Inside a container, `127.0.0.1` is the container. Point `MUSIC_URL` and the other backend URLs at
 addresses the container can reach (`http://host.docker.internal:<port>` for the Docker host).
 
+## Kaggle FLUX
+
+With `KAGGLE_FLUX=1` the gateway makes FLUX.1-schnell pictures on a free Kaggle GPU (T4 x2) that you
+own. Kaggle has no inference API, so a picture means pushing a script kernel, waiting for a GPU session
+to start, load the model (about 6.5 minutes whatever the batch size), render (about 20 seconds per
+1024 x 1024 picture) and exit, then downloading the PNGs. The gateway does this for you.
+
+**Which models.** By default only the FLUX id goes to Kaggle; everything else keeps using the Horde.
+`KAGGLE_IMAGE_MODELS=all` sends every image model there; a comma list such as `flux,gemini` matches
+parts of endpoint ids.
+
+**Batching.** Requests that arrive within `KAGGLE_BATCH_WINDOW_SEC` (20) of the first one, up to
+`KAGGLE_MAX_BATCH` (8) pictures, share one push. Requests that arrive while a push is running wait
+together and start the next push the moment the running one ends. One push at a time, so the other
+Kaggle GPU session stays free for the rest of your work. A request is never split across pushes, and
+each picture of a request gets its own seed. Results come back as PNG, mapped to the right request
+by index. If only some pictures of a batch come back, those requests succeed and the rest fail with a
+reason.
+
+**Quota protection.** At most `KAGGLE_DAILY_PUSH_CAP` (12) pushes in any 24 hours (set
+`KAGGLE_STATE_FILE` so a restart cannot reset the count), at most `KAGGLE_MAX_QUEUE` (16) requests
+waiting, and no push when the weekly GPU time left is under `KAGGLE_MIN_GPU_HOURS` (0.5). A request
+stopped by one of these goes to the AI Horde (`KAGGLE_FALLBACK=horde`, the default) or fails with a
+message the member can read (`KAGGLE_FALLBACK=none`). Other failures do not fall back.
+
+**Time.** The task stays `running` with `retry_after` while Kaggle works. Each request has an overall
+deadline, `KAGGLE_TASK_DEADLINE_MIN` (25). **Set `PARALLAX_JOB_TIMEOUT_MIN` on Parallax to 30 or more**
+(its default is 10) or Parallax will give up first and refund the member. A pushed kernel that has not
+started after `KAGGLE_START_TIMEOUT_MIN` (12) is treated as stalled and fails its requests; one that has
+not finished `KAGGLE_RUN_TIMEOUT_MIN` (35) after starting is treated as hung. The script also stops itself after
+`KAGGLE_KERNEL_WATCHDOG_MIN` (30) minutes, so a hang cannot burn quota. After a stall the gateway will
+not push over the old run: later requests wait until Kaggle clears it or they time out.
+
+**Size.** Multiples of 16, long side up to `KAGGLE_MAX_SIDE` (1024), never more than 1024 x 1024
+pixels: the largest size tested on two T4s in fp16 (about 11.2 of 14 GiB per GPU). Count is capped by
+`KAGGLE_MAX_N` (4) and `KAGGLE_MAX_BATCH`. Four steps, no guidance, as the model is built for.
+Prompts over 256 T5 tokens are cut.
+
+**Setup.**
+1. Use a Kaggle account with phone verification (needed for GPU and internet in notebooks).
+2. Create an API token at kaggle.com/settings (API section). Give the gateway `KAGGLE_USERNAME` and
+   either `KAGGLE_API_TOKEN` or `KAGGLE_API_TOKEN_FILE` (a file holding just the token, which keeps it
+   out of `docker inspect` and process lists), or the older `KAGGLE_KEY` with the user name.
+3. `KAGGLE_KERNEL_SLUG` (default `parallax-flux`) is created on the first push as a private kernel,
+   GPU T4 x2, internet on. Give it a name no other kernel of yours uses.
+4. Set `KAGGLE_FLUX=1`.
+
+**What leaves your machine.** Prompts go to Kaggle inside the kernel source, and the model weights come
+from an ungated Hugging Face mirror, with no token. The kernel is private, but Kaggle can see it. Do not
+use this for material that must not leave your network. The credential is sent only to the Kaggle API
+host, never to the signed file links, and is scrubbed from errors and logs.
+
+**API used** (confirmed against the official `kaggle` 2.2.5 and `kagglesdk` 0.1.38 Python packages):
+`POST https://api.kaggle.com/v1/kernels.KernelsApiService/<Method>` with a JSON body and
+`Authorization: Bearer <token>` (or HTTP basic with user name and key) for `SaveKernel` (push),
+`GetKernelSessionStatus`, `ListKernelSessionOutput` and `GetAcceleratorQuotaStatistics`. The kernel
+template is `src/backends/kaggle-flux-kernel.py`.
+
 ## Limits worth knowing
 
-- **Kaggle FLUX is a stub.** Kaggle has no live API. One picture means a batch kernel push, about
-  8 minutes end to end with model loading, and Parallax stops waiting 10 minutes after a job starts
-  (a constant in `src/server/worker.ts`). That is too close to work reliably, and it would spend the
-  shared GPU quota. With `KAGGLE_FLUX` unset, FLUX ids use an AI Horde FLUX model if one is online.
+- **Kaggle FLUX needs a longer Parallax job limit.** A push takes about 12 minutes, so set
+  `PARALLAX_JOB_TIMEOUT_MIN=30` on Parallax (it is 10 by default). With `KAGGLE_FLUX` unset, FLUX ids
+  use an AI Horde FLUX model if one is online.
 - Pictures are slow. In a live check, one 512x512 picture took about 7 minutes, and the Horde's own wait
   estimates were not reliable. Parallax stops waiting after 10 minutes; the gateway stops at 9
   (`HORDE_TIMEOUT_MS`). Long waits use `node:http`, because Node's built-in `fetch` gives up after 5

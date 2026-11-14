@@ -81,14 +81,14 @@ describe("image route", () => {
     assert.equal(JSON.parse(router.seen.at(-1).body).model, "aihorde/Flux.1-Schnell fp8 (Compact)");
   });
 
-  it("with KAGGLE_FLUX=1 a FLUX id fails with the documented Kaggle error and the router is never called", async () => {
+  it("with KAGGLE_FLUX=1 and no Kaggle account a FLUX id fails with a plain message and the router is never called", async () => {
     const router = track(await routerStub());
     const status = track(await statusStub());
     const g = track(await startGateway({ router, status, env: { KAGGLE_FLUX: "1" } }));
     const res = await g.call("replicate.image-gen.flux-schnell", { input: { prompt: "a fox" } });
     const t = await g.finish(res.headers.get("x-treg-call-id"));
     assert.equal(t.state, "failed");
-    assert.match(t.error, /Kaggle FLUX backend is not available/);
+    assert.match(t.error, /Kaggle image backend is not set up/);
     assert.equal(router.seen.length, 0);
     // Other image models still go to the Horde.
     const other = await g.call(GEMINI_IMAGE, geminiBody("x"));
