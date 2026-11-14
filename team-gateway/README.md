@@ -17,7 +17,7 @@ Parallax --POST /call/<endpoint>--> team gateway --> image router (AI Horde)
 | Parallax model kind | Backend | Notes |
 |---|---|---|
 | Image (Nano Banana, GPT Image, MiniMax Image, FLUX Schnell) | AI Horde through an OpenAI-compatible router | The gateway picks a live model per request from the Horde's public list: SDXL-class first, then the shortest wait. Adult-tuned models (names such as "hentai", "furry", "pony") are never picked automatically; pin one with `HORDE_MODEL` if you want it. One picture can take 7 minutes or more. |
-| Image, FLUX ids with `KAGGLE_FLUX=1` | FLUX.1-schnell on a Kaggle GPU | Batched, about 12 minutes per push. See "Kaggle FLUX" below. |
+| Image, FLUX ids with `KAGGLE_FLUX=1` | FLUX.1-schnell on a Kaggle GPU | Batched, 7 to 12 minutes per push. See "Kaggle FLUX" below. |
 | Music (Lyria 3.5, Lyria 3 Clip) | Stable Audio Open job server | Instrumental only, 5 to 47 seconds. Lyrics and "with vocals" text are dropped. |
 | Speech (MiniMax, Gemini TTS, Fish) | Voicebox | One light engine, one request at a time. Parallax voice names are not mapped; see `VOICEBOX_PROFILE_ID`. |
 | Video (every model) | none | Fails at once with "There is no team video backend." |
@@ -144,7 +144,7 @@ template is `src/backends/kaggle-flux-kernel.py`.
 
 ## Limits worth knowing
 
-- **Kaggle FLUX needs a longer Parallax job limit.** A push takes about 12 minutes, so set
+- **Kaggle FLUX needs a longer Parallax job limit.** A push takes 7 to 12 minutes (two pictures measured at 7), so set
   `PARALLAX_JOB_TIMEOUT_MIN=30` on Parallax (it is 10 by default). With `KAGGLE_FLUX` unset, FLUX ids
   use an AI Horde FLUX model if one is online.
 - Pictures are slow. In a live check, one 512x512 picture took about 7 minutes, and the Horde's own wait

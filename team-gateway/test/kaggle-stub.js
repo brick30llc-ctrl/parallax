@@ -1,7 +1,7 @@
 import zlib from "node:zlib";
 import { json, stub } from "./stubs.js";
 
-/** A real, valid PNG of the given size (solid grey). Cached: the largest is about 3 KB. */
+/** A real, valid PNG of the given size (solid gray). Cached: the largest is about 3 KB. */
 const cache = new Map();
 const CRC = (() => {
   const t = new Int32Array(256);

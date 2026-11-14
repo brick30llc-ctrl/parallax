@@ -37,7 +37,7 @@ export function kaggleConfig(env = process.env) {
     batchWindowMs: Math.round(num(env.KAGGLE_BATCH_WINDOW_SEC, 20, 0, 600) * 1000),
     /** Most pictures in one push. */
     maxBatch: int(env.KAGGLE_MAX_BATCH, 8, 1, 16),
-    /** Pushes allowed in any 24 hours. Each push costs about 12 minutes of GPU. */
+    /** Pushes allowed in any 24 hours. Each push costs 7 to 12 minutes of GPU. */
     dailyPushCap: int(env.KAGGLE_DAILY_PUSH_CAP, 12, 0, 200),
     /** Requests waiting for a push at once (not counting the batch that is running). */
     maxQueue: int(env.KAGGLE_MAX_QUEUE, 16, 1, 500),

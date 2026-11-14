@@ -300,7 +300,7 @@ export class KaggleBackend {
     }
 
     // 5. Collect what the run wrote. After an error the script may still have written some pictures.
-    const failed = final.state === "complete" ? "" : `The Kaggle GPU run ${final.state === "cancel" ? "was cancelled" : "failed"}${final.message ? `: ${final.message}` : "."}`;
+    const failed = final.state === "complete" ? "" : `The Kaggle GPU run ${final.state === "cancel" ? "was canceled" : "failed"}${final.message ? `: ${final.message}` : "."}`;
     let outcome;
     try {
       outcome = await this.collect({ slug, version, batchId, entries });
