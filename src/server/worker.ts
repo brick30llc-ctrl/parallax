@@ -8,7 +8,8 @@ import { all, get, parseJson, run, tx } from "./db";
 import { ApiError } from "./errors";
 import { ResultError, mediaFromReply, mediaFromTask } from "./extract";
 import type { JobRow } from "./jobs";
-import { mockDelayMs, mockMedia, mockShouldFail } from "./mock";
+import { jobTimeoutMs } from "./job-timeout";
+import { mockDelayMs,mockMedia, mockShouldFail } from "./mock";
 import { TregUnreachable, classify, redact, taskFailure, taskOutcome, tregCall, tregMode, tregTask, tregUploadMedia, type TregTask } from "./treg";
 
 /**
@@ -247,7 +248,7 @@ async function publicUrl(row: AssetRow): Promise<string> {
 
 /* ---------------------------------- poll ---------------------------------- */
 
-const expired = (job: JobRow, output: MediaType) => Date.now() - (job.started_at ?? job.created_at) > (output === "video" ? 30 : 10) * 60_000;
+const expired = (job: JobRow, output: MediaType) => Date.now() - (job.started_at ?? job.created_at) > jobTimeoutMs(output === "video");
 const TOO_SLOW = "This took too long and was stopped. Try again.";
 const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
 

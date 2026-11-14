@@ -3,6 +3,8 @@
  * token or account: a backend whose URL is not set is simply "not configured".
  */
 
+import { kaggleConfig } from "./backends/kaggle-config.js";
+
 const int = (v, fallback, min, max) => {
   const n = Number(v);
   if (!Number.isFinite(n) || v === undefined || v === "") return fallback;
@@ -81,5 +83,7 @@ export function loadConfig(env = process.env) {
       /** Largest audio file taken from the speech server. Its JSON is capped at 2 MB. */
       maxBytes: int(env.VOICEBOX_MAX_RESPONSE_BYTES, 30_000_000, 100_000, 100_000_000),
     },
+    /** Kaggle FLUX (used only with KAGGLE_FLUX=1). Parsed in backends/kaggle-config.js. */
+    kaggle: kaggleConfig(env),
   };
 }
