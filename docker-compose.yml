@@ -1,0 +1,114 @@
+# Parallax plus the team gateway: see team-gateway/README.md.
+#
+#   cp .env.team.example .env.local      # then fill it in; both services read exactly this file
+#   docker compose --env-file .env.local up --build
+#
+# "env_file: .env.local" below is a fixed path, next to this file. "--env-file" is a separate thing:
+# it only feeds ${...} values used in this file (PARALLAX_BIND, PARALLAX_PORT). Compose does not read
+# .env.local for those by itself, so keep passing --env-file when you set them.
+#
+# Only the access proxy's port is published, on PARALLAX_BIND (default: this machine only).
+# The proxy checks the Cloudflare Access token on every request, then passes the request to Parallax.
+# Parallax and the gateway have no published port; they are reached by service name on the compose
+# networks. Do not add a "ports:" entry back to parallax: it would be reachable around Access.
+# The proxy refuses to start without ACCESS_TEAM_DOMAIN and ACCESS_AUD (see .env.team.example).
+
+name: parallax-team
+
+services:
+  parallax:
+    build:
+      context: .
+      target: parallax
+    env_file:
+      - .env.local
+    environment:
+      # These win over the env file: inside the stack the gateway is a service name,
+      # and Parallax's data lives on the one named volume.
+      TREG_BASE_URL: http://team-gateway:8787
+      PARALLAX_DATA_DIR: /data
+      PORT: "3000"
+    # No "ports:" on purpose: only access-proxy is published.
+    expose:
+      - "3000"
+    volumes:
+      - parallax-data:/data
+    depends_on:
+      team-gateway:
+        condition: service_healthy
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - internal
+      - outbound
+
+  access-proxy:
+    build:
+      context: .
+      target: access-proxy
+    env_file:
+      - .env.local
+    environment:
+      ACCESS_PROXY_HOST: 0.0.0.0
+      ACCESS_PROXY_PORT: "8080"
+      UPSTREAM: http://parallax:3000
+    ports:
+      - "${PARALLAX_BIND:-127.0.0.1}:${PARALLAX_PORT:-3000}:8080"
+    depends_on:
+      parallax:
+        condition: service_healthy
+    read_only: true
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # "internal" reaches Parallax; "outbound" lets the proxy fetch Cloudflare's public keys and lets the
+    # published port work (a port cannot be published from a network marked internal).
+    networks:
+      - internal
+      - outbound
+
+  team-gateway:
+    build:
+      context: .
+      target: team-gateway
+    env_file:
+      - .env.local
+    environment:
+      GATEWAY_HOST: 0.0.0.0
+      GATEWAY_PORT: "8787"
+    # Lets MUSIC_URL point at a service on the Docker host (http://host.docker.internal:<port>).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # No "ports:" on purpose.
+    expose:
+      - "8787"
+    # The container is read-only; this volume is the one writable place, for KAGGLE_STATE_FILE=/state/...
+    # To use KAGGLE_API_TOKEN_FILE, also mount the token file read-only, for example:
+    #   - /path/on/host/kaggle_token:/run/secrets/kaggle_token:ro
+    volumes:
+      - gateway-state:/state
+    read_only: true
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - internal
+      - outbound
+
+volumes:
+  parallax-data:
+  gateway-state:
+
+networks:
+  # Parallax and the gateway talk here. Nothing outside can reach it.
+  internal:
+    internal: true
+  # Outbound only, for the backends, the model router and the AI Horde status list.
+  outbound: {}

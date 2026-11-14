@@ -1,0 +1,15 @@
+.git
+node_modules
+.next
+data
+deploy/run
+ui-shots
+coverage
+.env*
+!.env.team.example
+*.db
+*.sqlite*
+*.key
+*.token
+team-gateway/test
+access-proxy/test

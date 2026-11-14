@@ -1,0 +1,14 @@
+{
+  "name": "parallax-team-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A treg-compatible gateway that serves Parallax from self-hosted image, music and speech backends. No dependencies.",
+  "engines": { "node": ">=22.13" },
+  "scripts": {
+    "start": "node src/main.js",
+    "test": "node --test \"test/*.test.js\"",
+    "smoke": "node scripts/smoke.js"
+  },
+  "license": "MIT"
+}
