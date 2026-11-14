@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { BackendError, errorText, readBytes, readJson, request, sleep, tidy } from "../util.js";
+import { BackendError, errorText, publicHttpsTarget, readBytes, readJson, request, sleep, tidy } from "../util.js";
 
 /**
  * A small client for the parts of Kaggle's public API this backend needs. Node built-ins only.
@@ -53,9 +53,10 @@ export class KaggleApi {
    * @param cfg  the `kaggle` section of the gateway config
    * @param opts.sleep  replaced in tests so backoff does not take real time
    */
-  constructor(cfg, { sleepFn = sleep } = {}) {
+  constructor(cfg, { sleepFn = sleep, vetLink = publicHttpsTarget } = {}) {
     this.cfg = cfg;
     this.sleep = sleepFn;
+    this.vetLink = vetLink;
     this.base = cfg.apiUrl || DEFAULT_API;
     this.tokenFromFile = null;
     let host = "";
@@ -226,11 +227,16 @@ export class KaggleApi {
     } catch {
       throw new BackendError("Kaggle gave an output link that is not valid.");
     }
-    if (u.protocol !== "https:" && !(this.cfg.apiUrl && LOOPBACK.test(u.hostname))) throw new BackendError("Kaggle gave an output link that is not https.");
+    const local = Boolean(this.cfg.apiUrl && LOOPBACK.test(u.hostname)); // a test stand-in on this machine
+    if (u.protocol !== "https:" && !local) throw new BackendError("Kaggle gave an output link that is not https.");
+    // A real link must lead to a public address, and the connection is pinned to the one checked.
+    const target = local ? null : await this.vetLink(url);
+    if (!local && !target) throw new BackendError("Kaggle gave an output link that does not lead to a public address.");
+    const lookup = target ? { lookup: target.lookup } : {};
     let last = null;
     for (let attempt = 1; attempt <= this.cfg.apiRetries; attempt++) {
       try {
-        const res = await request("Kaggle output", url, { headers: { "user-agent": "parallax-team-gateway" } }, Math.max(this.cfg.apiTimeoutMs, 120_000), maxBytes);
+        const res = await request("Kaggle output", url, { headers: { "user-agent": "parallax-team-gateway" }, ...lookup }, Math.max(this.cfg.apiTimeoutMs, 120_000), maxBytes);
         if (res.status === 429 || res.status >= 500) {
           last = `Kaggle answered ${res.status}.`;
         } else if (!res.ok) {

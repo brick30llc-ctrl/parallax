@@ -361,6 +361,15 @@ describe("kaggle backend: the credential never leaks", () => {
     const api = new KaggleApi(kaggleConfig({ KAGGLE_USERNAME: "u1", KAGGLE_API_TOKEN: SECRET, KAGGLE_API_URL: "http://kaggle.example.net" }));
     await assert.rejects(api.status({ slug: "x" }), (err) => /https/.test(err.message) && !err.message.includes(SECRET));
   });
+
+  it("refuses an output link that leads to a private address, and names no address", async () => {
+    const api = new KaggleApi(kaggleConfig({ KAGGLE_USERNAME: "u1", KAGGLE_API_TOKEN: SECRET }));
+    for (const link of ["https://127.0.0.1:1/out.png", "https://10.0.0.5/out.png", "https://[::1]/out.png", "https://169.254.169.254/latest"])
+      await assert.rejects(api.download(link, 1000), (err) => /public address/.test(err.message) && !/\d+\.\d+\.\d+\.\d+|::1/.test(err.message), link);
+    // A name that resolves inside is refused the same way (resolver injected, no real DNS).
+    const inside = new KaggleApi(kaggleConfig({ KAGGLE_USERNAME: "u1", KAGGLE_API_TOKEN: SECRET }), { vetLink: async () => null });
+    await assert.rejects(inside.download("https://storage.example/out.png", 1000), /public address/);
+  });
 });
 
 describe("routing", () => {

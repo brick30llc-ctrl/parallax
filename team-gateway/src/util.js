@@ -1,6 +1,8 @@
 import { createHash, timingSafeEqual } from "node:crypto";
+import dns from "node:dns/promises";
 import http from "node:http";
 import https from "node:https";
+import net from "node:net";
 
 /** A failure whose message is safe to show to a Parallax member. */
 export class BackendError extends Error {
@@ -91,7 +93,9 @@ export function request(label, input, init = {}, timeoutMs = 30_000, maxBytes = 
       return reject(new BackendError(`The ${label} backend address is not valid.`));
     }
     const lib = url.protocol === "https:" ? https : http;
-    const req = lib.request(url, { method: init.method ?? "GET", headers: init.headers ?? {}, signal }, (res) => {
+    const opts = { method: init.method ?? "GET", headers: init.headers ?? {}, signal };
+    if (init.lookup) opts.lookup = init.lookup; // a caller that vetted the address pins the connection to it
+    const req = lib.request(url, opts, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400) {
         res.resume();
         return reject(new BackendError(`The ${label} backend tried to redirect.`));
@@ -175,3 +179,59 @@ export function sniffKind(b) {
 }
 
 export const dataUri = (bytes, mime) => `data:${mime};base64,${bytes.toString("base64")}`;
+
+const NOT_PUBLIC = new net.BlockList();
+for (const [prefix, bits] of [
+  ["0.0.0.0", 8], ["10.0.0.0", 8], ["100.64.0.0", 10], ["127.0.0.0", 8], ["169.254.0.0", 16], ["172.16.0.0", 12],
+  ["192.0.0.0", 24], ["192.0.2.0", 24], ["192.168.0.0", 16], ["198.18.0.0", 15], ["198.51.100.0", 24],
+  ["203.0.113.0", 24], ["224.0.0.0", 4], ["240.0.0.0", 4],
+]) NOT_PUBLIC.addSubnet(prefix, bits, "ipv4");
+for (const [prefix, bits] of [
+  ["::", 128], ["::1", 128], ["64:ff9b::", 96], ["2001:db8::", 32], ["2002::", 16], ["fc00::", 7], ["fe80::", 10], ["ff00::", 8],
+]) NOT_PUBLIC.addSubnet(prefix, bits, "ipv6");
+
+/** True only for a literal IP address on the public internet: not loopback, private, link-local, CGNAT, multicast or reserved. */
+export function isPublicAddress(address) {
+  let ip = String(address ?? "");
+  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(ip);
+  if (mapped) ip = mapped[1];
+  const family = net.isIP(ip);
+  if (family === 0) return false;
+  return !NOT_PUBLIC.check(ip, family === 4 ? "ipv4" : "ipv6");
+}
+
+const systemResolve = (host) => dns.lookup(host, { all: true });
+
+/**
+ * Vets a URL that a backend handed back (a "your picture is at ..." link) before the gateway
+ * fetches it. The gateway sits on the internal network, so an unvetted link would let a hostile
+ * image worker make it read the app or the Docker host from the inside. Accepted: https, no
+ * credentials, and every address the name resolves to is public. Returns `{ url, lookup }`,
+ * where `lookup` pins the connection to the addresses that were checked (so a second, different
+ * DNS answer cannot be used), or null when the link is refused.
+ */
+export async function publicHttpsTarget(input, resolve = systemResolve) {
+  let url;
+  try {
+    url = new URL(input);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "https:" || url.username || url.password) return null;
+  const host = url.hostname.replace(/^\[|\]$/g, "");
+  let found;
+  try {
+    found = await resolve(host);
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(found) || found.length === 0) return null;
+  const list = found.map((a) => ({ address: a.address, family: a.family }));
+  if (!list.every((a) => isPublicAddress(a.address))) return null;
+  const lookup = (_host, options, cb) => {
+    const done = typeof options === "function" ? options : cb;
+    if (typeof options === "object" && options?.all) return done(null, list);
+    done(null, list[0].address, list[0].family);
+  };
+  return { url: url.href, lookup };
+}

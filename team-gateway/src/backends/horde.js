@@ -1,4 +1,4 @@
-import { BackendError, errorText, readBytes, readJson, request, sniffKind, tidy } from "../util.js";
+import { BackendError, errorText, publicHttpsTarget, readBytes, readJson, request, sniffKind, tidy } from "../util.js";
 import { aspectOf, dimensions, explicitSize, imageCountOf, isFlux, promptOf, sizeNameOf } from "../route.js";
 
 /**
@@ -95,9 +95,13 @@ export class HordeBackend {
     const item = body?.data?.[0];
     let bytes = null;
     if (typeof item?.b64_json === "string") bytes = Buffer.from(item.b64_json, "base64");
-    else if (typeof item?.url === "string" && /^https?:\/\//.test(item.url)) {
-      const img = await request("image", item.url, {}, 60_000, this.cfg.maxBytes ?? 40_000_000);
-      if (img.ok) bytes = await readBytes(img, this.cfg.maxBytes ?? 40_000_000);
+    else if (typeof item?.url === "string") {
+      // The link comes from a worker nobody here controls. Only a public https address is fetched.
+      const target = await publicHttpsTarget(item.url);
+      if (target) {
+        const img = await request("image", target.url, { lookup: target.lookup }, 60_000, this.cfg.maxBytes ?? 40_000_000);
+        if (img.ok) bytes = await readBytes(img, this.cfg.maxBytes ?? 40_000_000);
+      }
     }
     if (!bytes || sniffKind(bytes)?.kind !== "image") throw new BackendError("The image backend returned no picture.", { retryable: true });
     return bytes;

@@ -65,7 +65,7 @@ export const HORDE_LIST = [
 ];
 
 /** An OmniRoute stand-in that answers image requests with a WebP and records what it saw. */
-export async function routerStub({ delayMs = 0, status = 200, hang = false } = {}) {
+export async function routerStub({ delayMs = 0, status = 200, hang = false, resultUrl = null } = {}) {
   const state = { active: 0, maxActive: 0 };
   const s = await stub(async (req, res, body) => {
     if (req.url === "/v1/images/generations") {
@@ -75,6 +75,7 @@ export async function routerStub({ delayMs = 0, status = 200, hang = false } = {
         if (hang) return await new Promise(() => {});
         if (delayMs) await sleep(delayMs);
         if (status !== 200) return json(res, status, { error: { message: "router says no" } });
+        if (resultUrl) return json(res, 200, { data: [{ url: resultUrl }] });
         return json(res, 200, { data: [{ b64_json: fakeWebp().toString("base64") }] });
       } finally {
         state.active--;
