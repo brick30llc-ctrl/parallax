@@ -33,6 +33,7 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 !.env.example
+!.env.team.example
 
 # vercel
 .vercel
@@ -53,3 +54,9 @@ __pycache__/
 
 # local deploy state
 /deploy/run/
+
+# databases and key material, anywhere
+*.db
+*.sqlite*
+*.key
+*.token
