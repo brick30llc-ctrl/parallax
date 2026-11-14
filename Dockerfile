@@ -2,6 +2,7 @@
 #
 #   docker build --target parallax     -t parallax .
 #   docker build --target team-gateway -t parallax-team-gateway .
+#   docker build --target access-proxy -t parallax-access-proxy .
 #
 # docker-compose.yml builds both. Nothing here has been built or run yet.
 # Node 22.13 or newer is required (Parallax uses the built-in node:sqlite).
@@ -26,6 +27,18 @@ USER node
 EXPOSE 8787
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.GATEWAY_PORT||8787)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+CMD ["node", "src/main.js"]
+
+# ---- the Access proxy: verifies Cloudflare Access tokens in front of Parallax ----
+FROM ${NODE_IMAGE} AS access-proxy
+ENV NODE_ENV=production
+WORKDIR /proxy
+COPY --chown=node:node access-proxy/package.json ./package.json
+COPY --chown=node:node access-proxy/src ./src
+USER node
+EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.ACCESS_PROXY_PORT||8080)+'/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 CMD ["node", "src/main.js"]
 
 # ---- Parallax itself (last, so it is the default target) ---------------------

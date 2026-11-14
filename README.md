@@ -137,6 +137,10 @@ deploy/stop.sh
 data and log in `deploy/run/`. Read [`SECURITY.md`](SECURITY.md) before you put it on the
 internet.
 
+Behind Cloudflare Access? The Docker stack in `docker-compose.yml` publishes only
+[`access-proxy/`](access-proxy/README.md), a small proxy that checks the Access token on every
+request, so the app cannot be reached around Access.
+
 ## Checks and tests
 
 ```bash

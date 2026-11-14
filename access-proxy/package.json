@@ -1,0 +1,13 @@
+{
+  "name": "parallax-access-proxy",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A reverse proxy that verifies Cloudflare Access tokens before anything reaches Parallax. No dependencies.",
+  "engines": { "node": ">=22.13" },
+  "scripts": {
+    "start": "node src/main.js",
+    "test": "node --test \"test/*.test.js\""
+  },
+  "license": "MIT"
+}
