@@ -67,8 +67,15 @@ export const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
  * can take longer than that to come back. Returns a standard Response. Redirects are refused.
  * Network trouble and timeouts become BackendError with a message that names the backend
  * but never an address.
+ *
+ * The body is read as a stream and counted as it arrives. Past `maxBytes` (a declared
+ * Content-Length or the running total) the socket is destroyed and the call fails, so a
+ * backend that never stops talking cannot fill the gateway's memory. The default suits small
+ * control JSON; callers that fetch pictures or audio pass their backend's larger cap.
  */
-export function request(label, input, init = {}, timeoutMs = 30_000) {
+export const DEFAULT_MAX_BYTES = 2_000_000;
+
+export function request(label, input, init = {}, timeoutMs = 30_000, maxBytes = DEFAULT_MAX_BYTES) {
   return new Promise((resolve, reject) => {
     const signal = AbortSignal.timeout(timeoutMs);
     const fail = () =>
@@ -89,8 +96,20 @@ export function request(label, input, init = {}, timeoutMs = 30_000) {
         res.resume();
         return reject(new BackendError(`The ${label} backend tried to redirect.`));
       }
+      const tooBig = () => {
+        reject(new BackendError(`The ${label} backend sent a response that is too large.`));
+        res.destroy();
+        req.destroy();
+      };
+      const declared = Number(res.headers["content-length"]);
+      if (Number.isFinite(declared) && declared > maxBytes) return tooBig();
       const chunks = [];
-      res.on("data", (c) => chunks.push(c));
+      let total = 0;
+      res.on("data", (c) => {
+        total += c.length;
+        if (total > maxBytes) return tooBig();
+        chunks.push(c);
+      });
       res.on("error", fail);
       res.on("aborted", fail);
       res.on("end", () => {

@@ -86,9 +86,9 @@ export class MusicBackend {
       if (state.status === "done") break;
     }
 
-    const audio = await request("music", `${this.cfg.url}/api/jobs/${encodeURIComponent(job.id)}/audio`, {}, Math.min(120_000, left()));
+    const audio = await request("music", `${this.cfg.url}/api/jobs/${encodeURIComponent(job.id)}/audio`, {}, Math.min(120_000, left()), this.cfg.maxBytes ?? 30_000_000);
     if (!audio.ok) throw new BackendError(`The music backend answered ${audio.status} for the file.`, { retryable: true });
-    const bytes = await readBytes(audio, 30_000_000);
+    const bytes = await readBytes(audio, this.cfg.maxBytes ?? 30_000_000);
     const kind = sniffKind(bytes);
     if (kind?.kind !== "audio") throw new BackendError("The music backend returned no audio.");
     return [{ bytes, mime: kind.mime }];

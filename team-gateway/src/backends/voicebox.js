@@ -84,9 +84,9 @@ export class VoiceboxBackend {
       state = next;
     }
 
-    const audio = await request("speech", `${this.cfg.url}/audio/${encodeURIComponent(gen.id)}`, {}, Math.min(120_000, left()));
+    const audio = await request("speech", `${this.cfg.url}/audio/${encodeURIComponent(gen.id)}`, {}, Math.min(120_000, left()), this.cfg.maxBytes ?? 30_000_000);
     if (!audio.ok) throw new BackendError(`The speech backend answered ${audio.status} for the file.`, { retryable: true });
-    const bytes = await readBytes(audio, 30_000_000);
+    const bytes = await readBytes(audio, this.cfg.maxBytes ?? 30_000_000);
     const kind = sniffKind(bytes);
     if (kind?.kind !== "audio") throw new BackendError("The speech backend returned no audio.");
     return [{ bytes, mime: kind.mime }];

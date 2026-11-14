@@ -46,18 +46,31 @@ export function createGateway(config, { log = defaultLog, backends } = {}) {
   const calls = new Map();
   const byKey = new Map();
 
-  /** Forgets finished calls that are old, and the oldest ones beyond the cap. Running calls stay. */
+  /**
+   * Forgets finished calls that are old, the oldest ones beyond the count cap, and the oldest
+   * until the base64 results held in memory fit under the byte cap. Running calls stay.
+   */
   function sweep() {
     const now = Date.now();
     const finished = [...calls.values()].filter((c) => c.finishedAt).sort((x, y) => x.finishedAt - y.finishedAt);
+    let held = finished.reduce((n, c) => n + (c.size ?? 0), 0);
     const excess = finished.length - config.maxStored;
     finished.forEach((c, i) => {
-      if (i < excess || now - c.finishedAt > config.resultTtlMs) {
+      if (i < excess || now - c.finishedAt > config.resultTtlMs || held > config.maxStoredBytes) {
+        held -= c.size ?? 0;
         calls.delete(c.id);
         if (c.key) byKey.delete(c.key);
       }
     });
   }
+  // Results leave memory on their own, not only when a new call arrives.
+  const sweeper = setInterval(sweep, Math.min(60_000, Math.max(1_000, Math.floor(config.resultTtlMs / 2))));
+  sweeper.unref();
+
+  /** Calls running or waiting, and bodies being read, per backend. Checked before any body is read. */
+  const reserved = { image: 0, music: 0, speech: 0, kaggle: 0 };
+  const inflight = (name) => limiters[name].active + limiters[name].waiting + reserved[name];
+  const totalInflight = () => Object.keys(limiters).reduce((n, k) => n + inflight(k), 0);
 
   const send = (res, status, body, headers = {}) => {
     const text = body === undefined ? "" : JSON.stringify(body);
@@ -86,7 +99,7 @@ export function createGateway(config, { log = defaultLog, backends } = {}) {
     return Buffer.concat(chunks);
   }
 
-  function backendFor(kind, endpoint, body) {
+  function backendFor(kind, endpoint) {
     if (kind === "image") return isFlux(endpoint) && config.image.kaggleFlux ? "kaggle" : "image";
     return kind;
   }
@@ -105,6 +118,7 @@ export function createGateway(config, { log = defaultLog, backends } = {}) {
       }
       if (kept.length === 0) throw new BackendError("The result was too large to return.");
       call.result = kept;
+      call.size = kept.reduce((n, u) => n + u.length, 0);
       call.state = "succeeded";
       note(`done files=${kept.length}`);
     } catch (err) {
@@ -116,11 +130,40 @@ export function createGateway(config, { log = defaultLog, backends } = {}) {
     }
   }
 
+  /** Answers without reading the request body, and closes the connection so the rest is not read. */
+  const refuseEarly = (res, fn) => {
+    res.setHeader("connection", "close");
+    return fn();
+  };
+
   async function handleCall(req, res, endpoint) {
     if (req.method !== "POST") return refuse(res, "This endpoint is not served by the team gateway.", 404);
     const kind = kindOf(endpoint);
     if (kind === null) return refuse(res, "This endpoint is not served by the team gateway.", 404);
 
+    // A repeat of a call we already hold is answered from memory, with no body read.
+    const key = typeof req.headers["idempotency-key"] === "string" ? req.headers["idempotency-key"].slice(0, 200) : "";
+    if (key && byKey.has(key)) {
+      const known = calls.get(byKey.get(key));
+      if (known) return refuseEarly(res, () => send(res, 202, { call_id: known.id, state: known.state }, asyncHeaders(known.id)));
+    }
+
+    if (kind === "video") return refuseEarly(res, () => refuse(res, NO_VIDEO));
+
+    // Admission: decided from the endpoint alone, before a single body byte is kept.
+    const name = backendFor(kind, endpoint);
+    if (inflight(name) >= limiters[name].limit + config.maxQueue || totalInflight() >= config.maxInflight) {
+      return refuseEarly(res, () => tregError(res, 429, "share_busy"));
+    }
+    reserved[name]++;
+    try {
+      return await admitted(req, res, endpoint, kind, name, key);
+    } finally {
+      reserved[name]--;
+    }
+  }
+
+  async function admitted(req, res, endpoint, kind, name, key) {
     let body;
     try {
       const raw = await readBody(req, MAX_CALL_BODY);
@@ -129,21 +172,11 @@ export function createGateway(config, { log = defaultLog, backends } = {}) {
       return refuse(res, err?.status === 413 ? "The request is too large." : "The request body is not valid JSON.", err?.status === 413 ? 413 : 400);
     }
 
-    const key = typeof req.headers["idempotency-key"] === "string" ? req.headers["idempotency-key"].slice(0, 200) : "";
-    if (key && byKey.has(key)) {
-      const known = calls.get(byKey.get(key));
-      if (known) return send(res, 202, { call_id: known.id, state: known.state }, asyncHeaders(known.id));
-    }
-
-    if (kind === "video") return refuse(res, NO_VIDEO);
     if (hasReferenceMedia(body)) return refuse(res, NO_REFS);
 
-    const name = backendFor(kind, endpoint, body);
     const backend = b[name];
     if (name !== "kaggle" && !backend.configured) return refuse(res, `No team ${kind} backend is configured.`, 503);
     if (!promptOf(body)) return refuse(res, "The request has no prompt or text.", 422);
-    if (limiters[name].waiting >= config.maxQueue) return tregError(res, 429, "share_busy");
-
     sweep();
     const call = { id: newId(), endpoint, kind, state: "running", result: null, error: null, createdAt: Date.now(), finishedAt: 0, key };
     calls.set(call.id, call);
@@ -174,15 +207,27 @@ export function createGateway(config, { log = defaultLog, backends } = {}) {
     });
   }
 
+  /**
+   * Parallax parks a reference file here before sending a call that uses it. Nothing is kept: the
+   * bytes are counted as they stream past and dropped, so a large upload costs no memory.
+   *
+   * The refusal is deliberately NOT given here. Parallax turns any upload error into a generic
+   * "model busy, try again" after several retries, and the member never sees our text. So the
+   * upload is accepted and the call that names the file is refused with NO_REFS, which Parallax
+   * shows to the member as written (see `classify` in src/server/treg.ts).
+   */
   async function handleMedia(req, res) {
+    let total = 0;
     try {
-      const bytes = await readBody(req, MAX_MEDIA);
-      if (bytes.length === 0) return refuse(res, "No file was sent.", 400);
+      for await (const chunk of req) {
+        total += chunk.length;
+        if (total > MAX_MEDIA) throw Object.assign(new Error("too large"), { status: 413 });
+      }
     } catch {
+      res.setHeader("connection", "close");
       return refuse(res, "The file is too large.", 413);
     }
-    // Nothing is stored: reference files are refused when a call names them. The address
-    // only has to look like an https link to Parallax.
+    if (total === 0) return refuse(res, "No file was sent.", 400);
     send(res, 200, { url: `https://${REFS_HOST}/${randomBytes(8).toString("hex")}` });
   }
 
@@ -220,6 +265,7 @@ export function createGateway(config, { log = defaultLog, backends } = {}) {
       }),
     close: () =>
       new Promise((resolve) => {
+        clearInterval(sweeper);
         server.closeAllConnections?.();
         server.close(() => resolve());
       }),

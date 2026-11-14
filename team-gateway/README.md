@@ -73,7 +73,9 @@ cd team-gateway && node --env-file=../.env.local scripts/smoke.js          # ima
 
 `Dockerfile` has two targets (`parallax`, `team-gateway`) and `docker-compose.yml` runs both with one
 named volume for Parallax's data. Only Parallax's port is published, on `PARALLAX_BIND` (default
-`127.0.0.1`). The gateway has no published port. These files have not been built or run yet.
+`127.0.0.1`). The gateway has no published port. Both services read the file `.env.local` next to
+`docker-compose.yml` (a fixed path). `--env-file .env.local` is separate: it supplies the `${...}` values
+in the compose file itself (`PARALLAX_BIND`, `PARALLAX_PORT`).
 
 ```bash
 docker compose --env-file .env.local up --build

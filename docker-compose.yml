@@ -1,7 +1,11 @@
-# Parallax plus the team gateway. Unbuilt and untested as a stack: see team-gateway/README.md.
+# Parallax plus the team gateway: see team-gateway/README.md.
 #
-#   cp .env.team.example .env.local      # then fill it in
+#   cp .env.team.example .env.local      # then fill it in; both services read exactly this file
 #   docker compose --env-file .env.local up --build
+#
+# "env_file: .env.local" below is a fixed path, next to this file. "--env-file" is a separate thing:
+# it only feeds ${...} values used in this file (PARALLAX_BIND, PARALLAX_PORT). Compose does not read
+# .env.local for those by itself, so keep passing --env-file when you set them.
 #
 # Only Parallax's port is published, on PARALLAX_BIND (default: this machine only).
 # The gateway has no published port; Parallax reaches it by service name on a private network.
@@ -14,7 +18,7 @@ services:
       context: .
       target: parallax
     env_file:
-      - ${TEAM_ENV_FILE:-.env.local}
+      - .env.local
     environment:
       # These win over the env file: inside the stack the gateway is a service name,
       # and Parallax's data lives on the one named volume.
@@ -42,7 +46,7 @@ services:
       context: .
       target: team-gateway
     env_file:
-      - ${TEAM_ENV_FILE:-.env.local}
+      - .env.local
     environment:
       GATEWAY_HOST: 0.0.0.0
       GATEWAY_PORT: "8787"

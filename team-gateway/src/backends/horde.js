@@ -53,7 +53,7 @@ export class HordeBackend {
     if (!hordeStatusUrl) return null;
     if (this.cache.list && Date.now() - this.cache.at < statusCacheMs) return this.cache.list;
     try {
-      const res = await request("model status", hordeStatusUrl, { headers: { accept: "application/json", "client-agent": "parallax-team-gateway:0.1:unknown" } }, statusTimeoutMs);
+      const res = await request("model status", hordeStatusUrl, { headers: { accept: "application/json", "client-agent": "parallax-team-gateway:0.1:unknown" } }, statusTimeoutMs, this.cfg.maxListBytes ?? 5_000_000);
       if (!res.ok) return null;
       const list = await readJson(res);
       if (!Array.isArray(list)) return null;
@@ -85,6 +85,7 @@ export class HordeBackend {
         body: JSON.stringify({ model: `aihorde/${model}`, prompt, size: `${size.width}x${size.height}`, n: 1 }),
       },
       timeoutMs,
+      this.cfg.maxBytes ?? 40_000_000,
     );
     if (!res.ok) {
       const body = await readJson(res);
@@ -95,8 +96,8 @@ export class HordeBackend {
     let bytes = null;
     if (typeof item?.b64_json === "string") bytes = Buffer.from(item.b64_json, "base64");
     else if (typeof item?.url === "string" && /^https?:\/\//.test(item.url)) {
-      const img = await request("image", item.url, {}, 60_000);
-      if (img.ok) bytes = await readBytes(img, 20_000_000);
+      const img = await request("image", item.url, {}, 60_000, this.cfg.maxBytes ?? 40_000_000);
+      if (img.ok) bytes = await readBytes(img, this.cfg.maxBytes ?? 40_000_000);
     }
     if (!bytes || sniffKind(bytes)?.kind !== "image") throw new BackendError("The image backend returned no picture.", { retryable: true });
     return bytes;

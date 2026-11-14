@@ -26,6 +26,10 @@ export function loadConfig(env = process.env) {
     /** How long a finished call stays readable, and how many finished calls are kept. */
     resultTtlMs: int(env.GATEWAY_RESULT_TTL_MS, 60 * 60_000, 1_000, 24 * 3_600_000),
     maxStored: int(env.GATEWAY_MAX_STORED, 200, 1, 5000),
+    /** Memory held by finished results (base64). The oldest are dropped past this. */
+    maxStoredBytes: int(env.GATEWAY_MAX_STORED_BYTES, 200_000_000, 1_000_000, 2_000_000_000),
+    /** Calls running or waiting across all backends before new ones are told to retry. */
+    maxInflight: int(env.GATEWAY_MAX_INFLIGHT, 40, 1, 1000),
     /** Largest task answer, in bytes. Parallax refuses task JSON above 32 MB. */
     maxResultBytes: int(env.GATEWAY_MAX_RESULT_BYTES, 24_000_000, 100_000, 30_000_000),
     retryAfterSec: int(env.GATEWAY_RETRY_AFTER_SEC, 5, 2, 15),
@@ -48,6 +52,10 @@ export function loadConfig(env = process.env) {
       maxCount: int(env.IMAGE_MAX_N, 4, 1, 10),
       /** Send FLUX model ids to the Kaggle backend, which is off by default (see backends/kaggle.js). */
       kaggleFlux: flag(env.KAGGLE_FLUX),
+      /** Largest response from the router (a base64 picture inside JSON) or a picture download. */
+      maxBytes: int(env.HORDE_MAX_RESPONSE_BYTES, 40_000_000, 100_000, 100_000_000),
+      /** Largest model list from the status API. */
+      maxListBytes: int(env.HORDE_MAX_LIST_BYTES, 5_000_000, 10_000, 50_000_000),
     },
     music: {
       url: url(env.MUSIC_URL),
@@ -57,6 +65,8 @@ export function loadConfig(env = process.env) {
       fullSeconds: int(env.MUSIC_FULL_SECONDS, 30, 5, 47),
       timeoutMs: int(env.MUSIC_TIMEOUT_MS, 480_000, 1_000, 3_600_000),
       pollMs: int(env.MUSIC_POLL_MS, 3_000, 10, 30_000),
+      /** Largest audio file taken from the music server. Its job and status JSON is capped at 2 MB. */
+      maxBytes: int(env.MUSIC_MAX_RESPONSE_BYTES, 30_000_000, 100_000, 100_000_000),
     },
     speech: {
       url: url(env.VOICEBOX_URL),
@@ -68,6 +78,8 @@ export function loadConfig(env = process.env) {
       timeoutMs: int(env.VOICEBOX_TIMEOUT_MS, 180_000, 1_000, 1_800_000),
       pollMs: int(env.VOICEBOX_POLL_MS, 1_000, 10, 30_000),
       maxChars: int(env.VOICEBOX_MAX_CHARS, 5000, 100, 50_000),
+      /** Largest audio file taken from the speech server. Its JSON is capped at 2 MB. */
+      maxBytes: int(env.VOICEBOX_MAX_RESPONSE_BYTES, 30_000_000, 100_000, 100_000_000),
     },
   };
 }
